@@ -28,10 +28,12 @@ mac/pyinstaller/
 .tmp_runtime_tests/
 .pip-cache/
 dev_tools/
-tests/
+/tests/
 packaging/
 Test Runs/
 Test Folder/
+# The Electron e2e suite is versioned, not local test output.
+!electron-ui/tests/
 _ScanPrep_Output*/
 _ScanPrep_Preview_Cache/
 _debug_timing_log.txt

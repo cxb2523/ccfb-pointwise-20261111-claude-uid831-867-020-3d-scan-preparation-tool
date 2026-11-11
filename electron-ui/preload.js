@@ -15,6 +15,15 @@ contextBridge.exposeInMainWorld("scanprep", {
   previewContrast: (config) => ipcRenderer.invoke("backend-contrast-preview", config),
   cancelBackend: () => ipcRenderer.invoke("backend-cancel"),
   openPath: (targetPath) => ipcRenderer.invoke("open-path", targetPath),
+  // 3D model batch service: the renderer can only start/cancel a batch and
+  // subscribe to events. It has no direct filesystem or child-process access.
+  startBatch3d: (config) => ipcRenderer.invoke("batch3d-start", config),
+  cancelBatch3d: () => ipcRenderer.invoke("batch3d-cancel"),
+  onBatch3dEvent: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("batch3d-event", listener);
+    return () => ipcRenderer.removeListener("batch3d-event", listener);
+  },
   onBackendEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("backend-event", listener);

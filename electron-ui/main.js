@@ -8,6 +8,8 @@ const rootDir = path.resolve(__dirname, "..");
 let activeBackend = null;
 let cancelRequested = false;
 let cancelEscalationTimer = null;
+let activeBatch3d = null;
+let batch3dCancelTimer = null;
 
 app.setName("3D Scan Prep Tool");
 
@@ -107,6 +109,57 @@ function getBackendTarget() {
     argsPrefix: [path.join(rootDir, "scan_prep_engine.py")],
     cwd: rootDir
   };
+}
+
+function getBatch3dTarget() {
+  // The 3D batch service is a deliberately lightweight child: it never imports
+  // the torch/AI image pipeline, so a batch of large scans stays memory-bounded.
+  if (process.env.SCANPREP_BATCH3D && fs.existsSync(process.env.SCANPREP_BATCH3D)) {
+    return {
+      executable: process.env.SCANPREP_BATCH3D,
+      argsPrefix: [],
+      cwd: path.dirname(process.env.SCANPREP_BATCH3D)
+    };
+  }
+
+  const packagedName = process.platform === "win32"
+    ? "ScanPrep Batch3D Service.exe"
+    : "ScanPrep Batch3D Service";
+  const packagedExe = path.join(rootDir, "backend", packagedName);
+  if (fs.existsSync(packagedExe)) {
+    return { executable: packagedExe, argsPrefix: [], cwd: path.dirname(packagedExe) };
+  }
+
+  let pythonExe = process.env.SCANPREP_PYTHON && fs.existsSync(process.env.SCANPREP_PYTHON)
+    ? process.env.SCANPREP_PYTHON
+    : (process.platform === "win32" ? "python" : "python3");
+
+  const venvCandidates = process.platform === "win32"
+    ? [path.join(rootDir, ".venv-scanprep-cu128", "Scripts", "python.exe")]
+    : [
+        path.join(rootDir, ".venv-scanprep-macos", "bin", "python"),
+        path.join(rootDir, ".venv-scanprep-cu128", "bin", "python"),
+        path.join(rootDir, ".venv", "bin", "python")
+      ];
+  for (const candidate of venvCandidates) {
+    if (fs.existsSync(candidate)) { pythonExe = candidate; break; }
+  }
+
+  return {
+    executable: pythonExe,
+    argsPrefix: [path.join(rootDir, "scanprep3d_service.py")],
+    cwd: rootDir
+  };
+}
+
+function sendBatch3dLine(webContents, line, stream = "stdout") {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  try {
+    webContents.send("batch3d-event", JSON.parse(trimmed));
+  } catch (_error) {
+    webContents.send("batch3d-event", { type: stream, message: trimmed });
+  }
 }
 
 function sendBackendLine(webContents, line, stream = "stdout") {
@@ -405,4 +458,111 @@ ipcMain.handle("open-path", async (_event, targetPath) => {
   if (!targetPath || !fs.existsSync(targetPath)) return { opened: false };
   const error = await shell.openPath(targetPath);
   return { opened: error === "", error };
+});
+
+// ---------------------------------------------------------------------------
+// 3D model batch service (OBJ/GLB). Thin main-process orchestration: spawn the
+// Python child, stream NDJSON events, and support cooperative cancellation.
+// All filesystem decisions live in the child; the renderer only gets events.
+// ---------------------------------------------------------------------------
+
+function streamBatch3dLines(stream, webContents, streamName) {
+  let buffer = "";
+  stream.on("data", (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    lines.forEach((line) => sendBatch3dLine(webContents, line, streamName));
+  });
+  stream.on("end", () => {
+    if (buffer) sendBatch3dLine(webContents, buffer, streamName);
+  });
+}
+
+ipcMain.handle("batch3d-start", async (event, config) => {
+  if (activeBatch3d) {
+    event.sender.send("batch3d-event", {
+      type: "error",
+      message: "A 3D batch is already running."
+    });
+    return { code: 1 };
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "scanprep-batch3d-"));
+  const configPath = path.join(tmpDir, "batch-config.json");
+  // Concurrency is re-clamped inside the service (default 1, hard cap 2);
+  // write the config through main so the renderer never touches the disk.
+  const safeConfig = {
+    input_path: config.inputPath,
+    output_dir: config.outputDir || undefined,
+    recursive: config.recursive !== false,
+    concurrency: config.concurrency,
+    decimate_ratio: config.decimateRatio,
+    texture_format: config.textureFormat,
+    webp_quality: config.webpQuality
+  };
+  fs.writeFileSync(configPath, JSON.stringify(safeConfig, null, 2), "utf-8");
+
+  const target = getBatch3dTarget();
+  const child = spawn(target.executable, [...target.argsPrefix, configPath], {
+    cwd: target.cwd,
+    env: getBackendRuntimeEnv(),
+    windowsHide: true
+  });
+  activeBatch3d = child;
+
+  event.sender.send("batch3d-event", {
+    type: "status",
+    message: `Started 3D batch service: ${path.basename(target.executable)}`
+  });
+  streamBatch3dLines(child.stdout, event.sender, "stdout");
+  streamBatch3dLines(child.stderr, event.sender, "stderr");
+
+  return new Promise((resolve) => {
+    child.on("error", (error) => {
+      event.sender.send("batch3d-event", { type: "error", message: error.message });
+      activeBatch3d = null;
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_e) {}
+      resolve({ code: 1 });
+    });
+    child.on("close", (code) => {
+      event.sender.send("batch3d-event", {
+        type: "service-exit",
+        code,
+        message: `3D batch service exited with code ${code}.`
+      });
+      activeBatch3d = null;
+      if (batch3dCancelTimer) { clearTimeout(batch3dCancelTimer); batch3dCancelTimer = null; }
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_e) {}
+      resolve({ code });
+    });
+  });
+});
+
+ipcMain.handle("batch3d-cancel", async (event) => {
+  if (!activeBatch3d) return { cancelled: false };
+  event.sender.send("batch3d-event", {
+    type: "status",
+    message: "Cancellation requested. Finishing the current task stage..."
+  });
+  const child = activeBatch3d;
+  try {
+    if (child.stdin && !child.stdin.destroyed) {
+      child.stdin.write("cancel\n");
+    }
+  } catch (_error) {
+    // Escalate to a hard kill if the stdin channel is gone.
+  }
+  if (batch3dCancelTimer) clearTimeout(batch3dCancelTimer);
+  batch3dCancelTimer = setTimeout(() => {
+    if (activeBatch3d === child && child.exitCode === null) {
+      event.sender.send("batch3d-event", {
+        type: "status",
+        message: "Cancellation is taking too long; stopping the service process."
+      });
+      child.kill();
+    }
+  }, 20000);
+  batch3dCancelTimer.unref?.();
+  return { cancelled: true };
 });

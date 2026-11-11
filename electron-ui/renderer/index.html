@@ -302,6 +302,48 @@
             <button class="secondary-button full" id="testGpuButton" data-help="Checks whether this computer can use GPU acceleration. If not, ScanPrep will use CPU.">Test GPU</button>
             <button class="secondary-button full" id="openEngineLogButton" data-help="Opens detailed processing notes and tool messages for troubleshooting.">Open Tool Log</button>
           </article>
+
+          <article class="stage-card" data-stage="batch3d">
+            <div class="stage-number">07</div>
+            <h2>3D Models Batch</h2>
+            <p class="stage-note">Recursively queue OBJ/GLB scans, decimate per material group, and transcode textures. Runs in a separate service process.</p>
+
+            <label class="field-label">Model folder or file</label>
+            <div class="path-row">
+              <input id="batch3dInputPath" class="path-field" placeholder="Choose folder with OBJ/GLB files..." readonly data-help="The service walks this folder recursively and queues every OBJ/GLB outside of *_processed output trees." />
+              <button class="icon-button" id="batch3dChooseButton" title="Choose model folder" data-help="Choose the folder containing OBJ/GLB scans.">...</button>
+            </div>
+
+            <label class="field-label">Concurrency</label>
+            <select id="batch3dConcurrency" data-help="3D decoding and texture compression are memory-heavy. Serial (default) runs one model at a time; the safe maximum is 2.">
+              <option value="1" selected>Serial - 1 worker (default)</option>
+              <option value="2">2 workers (memory-bounded cap)</option>
+            </select>
+
+            <label class="field-label">Decimation strength</label>
+            <div class="slider-row" data-help="Fraction of faces removed within each material group. UV borders and material groups stay locked, so textures never bleed across materials."><span id="batch3dDecimateLabel">50%</span><input id="batch3dDecimate" type="range" min="0" max="90" step="5" value="50" /></div>
+
+            <label class="field-label">Texture format</label>
+            <select id="batch3dTextureFormat" data-help="PNG/TGA textures are transcoded through one shared manifest, and MTL/glTF references are rewritten only after every conversion succeeds.">
+              <option value="webp" selected>WebP (EXT_texture_webp)</option>
+              <option value="ktx2">KTX2 (KHR_texture_basisu, uncompressed fallback)</option>
+              <option value="none">Keep original textures</option>
+            </select>
+
+            <div class="mini-grid">
+              <button class="primary-button full" id="batch3dRunButton" data-help="Starts the 3D batch service as a child process. Outputs land in sibling *_processed folders and never overwrite sources.">Start 3D Batch</button>
+              <button class="secondary-button full" id="batch3dOpenOutputButton" data-help="Open the processed output folder once a batch has produced results.">Open Output</button>
+            </div>
+
+            <div class="meter-card" data-help="Overall batch progress reported by the service process.">
+              <span id="batch3dSummary">Idle</span>
+              <div class="run-progress batch3d-progress"><span id="batch3dProgressBar"></span></div>
+            </div>
+
+            <div id="batch3dTaskList" class="batch3d-task-list" aria-live="polite">
+              <p class="quiet">Queued models, per-file face counts and failure details appear here.</p>
+            </div>
+          </article>
         </section>
 
         <aside class="preview-panel">
@@ -386,5 +428,6 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="batch3d.js"></script>
   </body>
 </html>

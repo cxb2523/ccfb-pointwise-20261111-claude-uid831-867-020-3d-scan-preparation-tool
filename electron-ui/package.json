@@ -5,7 +5,8 @@
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "e2e:batch": "node tests/e2e-batch.test.js"
   },
   "devDependencies": {
     "electron": "38.0.0",

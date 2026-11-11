@@ -1092,3 +1092,64 @@ select:disabled {
     height: 84px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   3D model batch panel
+--------------------------------------------------------------------------- */
+.batch3d-progress {
+  margin-top: 8px;
+}
+
+.batch3d-task-list {
+  margin-top: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.batch3d-task {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+}
+
+.batch3d-task-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch3d-task-name {
+  font-weight: 720;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch3d-task-state {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.batch3d-task-detail {
+  margin-top: 4px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.batch3d-task.is-running .batch3d-task-state { color: var(--cyan); }
+.batch3d-task.is-completed { border-color: rgba(141, 247, 200, 0.45); }
+.batch3d-task.is-completed .batch3d-task-state { color: var(--green); }
+.batch3d-task.is-failed { border-color: rgba(255, 155, 155, 0.5); }
+.batch3d-task.is-failed .batch3d-task-state { color: #ff9b9b; }
+.batch3d-task.is-cancelled .batch3d-task-state { color: var(--warning); }

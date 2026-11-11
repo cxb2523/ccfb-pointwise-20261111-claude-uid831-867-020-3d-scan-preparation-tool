@@ -1,0 +1,22 @@
+# Dependencies for the 3D model batch service (scanprep3d/ + scanprep3d_service.py).
+# Kept separate from requirements.txt on purpose: the batch service child
+# process must not pull in torch/ultralytics, so memory stays bounded when
+# queues of large scans run concurrently (default 1 worker, hard cap 2).
+#
+# Install alongside the main environment or into a dedicated venv:
+#   pip install -r requirements-3d.txt
+
+# Mesh IO (OBJ/GLB), scene graph and geometry helpers
+trimesh>=4.4.0
+
+# Quadric edge-collapse decimation with collapse-history replay, which is
+# what locks UV borders and material groups during face reduction.
+fast-simplification>=0.2.0
+
+# Texture decode/encode (PNG, TGA, WebP) and array math
+Pillow>=10.2.0
+numpy>=1.26.4
+
+# Optional, only needed if a real compressed KTX2 (BC7/BasisU) encoder is
+# wired in via SCANPREP_KTX2_ENCODER; without one the service writes a
+# standards-valid uncompressed KTX2 fallback using stdlib + Pillow only.

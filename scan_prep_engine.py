@@ -3101,6 +3101,26 @@ def run_gpu_test_json_cli():
     return 1
 
 
+def run_batch_service_cli(config_path):
+    """3D model batch service (OBJ/GLB), implemented in the scanprep3d package."""
+    try:
+        from scanprep3d import service
+    except Exception as e:
+        emit_cli_event("error", message=f"3D batch service unavailable: {compact_error(e)}")
+        return 1
+    if not config_path:
+        emit_cli_event("error", message="--batch-service requires a config JSON path.")
+        return 1
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            batch_config = json.load(f)
+    except Exception as e:
+        emit_cli_event("error", message=f"Could not read batch config: {compact_error(e)}")
+        return 1
+    service.start_stdin_cancel_watcher()
+    return service.run_batch(batch_config)
+
+
 
 # =========================================================================================
 # ==================== PART 2: UI LAUNCHER & MULTIPROCESSING LOCK =========================
@@ -3118,6 +3138,7 @@ if __name__ == '__main__':
         "--source-preview-config",
         "--contrast-preview-config",
         "--mask-preview-config",
+        "--batch-service",
     }
     if any(command in sys.argv for command in cancelable_cli_commands):
         start_stdin_cancel_watcher()
@@ -3126,6 +3147,10 @@ if __name__ == '__main__':
         sys.exit(run_ai_diagnostics_cli())
     if "--gpu-test-json" in sys.argv:
         sys.exit(run_gpu_test_json_cli())
+    if "--batch-service" in sys.argv:
+        arg_idx = sys.argv.index("--batch-service")
+        config_path = sys.argv[arg_idx + 1] if len(sys.argv) > arg_idx + 1 else ""
+        sys.exit(run_batch_service_cli(config_path))
     if "--system-diagnostics-json" in sys.argv:
         arg_idx = sys.argv.index("--system-diagnostics-json")
         config_path = sys.argv[arg_idx + 1] if len(sys.argv) > arg_idx + 1 else ""
